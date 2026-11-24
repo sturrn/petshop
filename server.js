@@ -5,19 +5,47 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken")
 const cookieParser = require("cookie-parser");
 const path = require("path");
+const { truncateSync } = require("fs");
 const app = express();
+app.set("trust proxy", 1) //codigo novo implementado
 app.use(express.json());
-
 
 app.use(express.static(path.join(__dirname, "public")))
 app.use(cookieParser());
 
+const ssl = process.env.DB_SSL_CA ? {ca: process.env.DB_SSL_CA.replace(/\\n/), rejectUnauthorized: true}: {rejectUnauthorized: truncateSync}
+
 const db = mysql.createPool({
     host: process.env.HOST,
-    port: process.env.PORT,
+    port: Number(process.env.PORT),
     user: process.env.USER,
-    database: process.env.DB_NAME
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    ssl : ssl,
+    waitForConnections : true,
+    connectionLimit: 5,
+    queueLimit: 0
 })
+
+async function criarBanco(){
+    await db.execute(`CREATE TABLE IF NOT EXISTS atendimento(
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        tutor VARCHAR(100) NOT NULL,
+        pet VARCHAR(100) NOT NULL,
+        especie ENUM('Cachorro', 'Gato', 'Outro') NOT NULL,
+        servico VARCHAR(100) NOT NULL,
+        valor DECIMAL (10,2) NOT NULL,
+        data_atendimento DATE NOT NULL,
+        criacao_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )ENGINE =InnoDB`)
+
+        await db.execute(`CREATE TABLE IF NOT EXISTS usuario(
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            email VARCHAR(70) NOT NULL UNIQUE,
+            senha VARCHAR(255) NOT NULL
+            )ENGINE =InnoDB`)
+            iniciar()
+}
 
 async function iniciar() {
     try {
@@ -109,23 +137,38 @@ app.post("/api/logout", (req, res) => {
     res.json({ mensagem: "logout efetuado" })
 })
 
+async function conectarPython(endpoint, atendimento,res, tipo){
+    try{
+    const url = process.env.PYTHON_API_URL
+    const resposta = await fetch(`${url.replace(/\/$/, "")}${endpoint}`,{
+        method:"POST",
+        headers: { "Content -Type": "application/json"},
+        body: JSON.stringify({atendimento})
+    })
+    if(!resposta.ok){
+        throw new Error(resposta.status)
+    }
+    const arquivo = Buffer.from(await resposta.arrayBuffer());
+    if(tipo === "pdf"){
+        res.setHeader("content-Type", "application/pdf")
+        res.setHeader("content-Disposition", "attchment; filename = 'relatorio-petshop.pdf'")
+    }else {
+        res.setHeader("Content-Type", "image/png")
+        res.setHeader("Content_Disposition", "inline; Filename = graficos.png")
+    }
+    res.send(arquivo);
+}catch(erro){
+    console.log(erro)
+    res.status(502).json({erro:"Não foi possivekl conectar ao servidor python!!!"})
+}
+}
+
+
+
 app.get("/api/graficos", autenticar, async (req, res) => {
     try {
         const [atendimento] = await db.execute(`SELECT tutor, pet, especie, servico FROM atendimento`)
-        const resposta = await fetch("http://127.0.0.1:5001/graficos", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ atendimento })
-        })
-        if (!resposta.ok) {
-            throw new Error("O python não conseguiu gerar os graficos")
-        }
-        const imagem = Buffer.from(await resposta.arrayBuffer())
-        res.setHeader("Content-Type", "image/png")
-        res.setHeader("Content-Disposition", "inline; filename=graficos.png")
-        res.send(imagem)
+        await conectarPython("/graficos", atendimento, res, "imagem")
     } catch (erro) {
         res.status(500).json({ erro: "erro de comunicacao com o python" })
     }
@@ -136,26 +179,15 @@ app.get("/api/pdf", autenticar, async (req, res) => {
         const [atendimento] = await db.execute(`
         SELECT tutor, pet, especie, servico FROM atendimento ORDER BY atendimento
     `)
-        const resposta = await fetch("http://127.0.0.1:5001/pdf", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ atendimento })
-        })
-        if (!resposta.ok) {
-            throw new Error("Falha ao gerar PDF")
-        }
-        const pdf = Buffer.from(await resposta.arrayBuffer())
-        res.setHeader("Content-Type", "application/pdf")
-        res.setHeader("Content-Disposition", "attachment; filename=relatorio-petshop.pdf")
-        res.send(pdf)
+       await conectarPython("/pdf", atendimento, res, "pdf")
     } catch (erro) {
         res.status(500).json({ erro: "Erro de comunicação com o Python" })
     }
 })
 
-app.listen(3000, () => {
-    iniciar();
-    console.log("Servidor rodando em localhost:3000")
-});
+criarBanco()
+.then(()=> app.listen(3000, "0.0.0.0", ()=> console.log("Servidor rodando")))
+.catch((erro) => {
+    console.log(erro)
+    process.exit(1)
+})
