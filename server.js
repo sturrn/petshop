@@ -142,7 +142,7 @@ async function conectarPython(endpoint, atendimento,res, tipo){
     const url = process.env.PYTHON_API_URL
     const resposta = await fetch(`${url.replace(/\/$/, "")}${endpoint}`,{
         method:"POST",
-        headers: { "Content -Type": "application/json"},
+        headers: { "Content-Type": "application/json"},
         body: JSON.stringify({atendimento})
     })
     if(!resposta.ok){
@@ -150,11 +150,11 @@ async function conectarPython(endpoint, atendimento,res, tipo){
     }
     const arquivo = Buffer.from(await resposta.arrayBuffer());
     if(tipo === "pdf"){
-        res.setHeader("content-Type", "application/pdf")
-        res.setHeader("content-Disposition", "attchment; filename = 'relatorio-petshop.pdf'")
+        res.setHeader("Content-Type", "application/pdf")
+        res.setHeader("Content-Disposition", "attchment; filename = 'relatorio-petshop.pdf'")
     }else {
         res.setHeader("Content-Type", "image/png")
-        res.setHeader("Content_Disposition", "inline; Filename = graficos.png")
+        res.setHeader("Content-Disposition", "inline; filename = graficos.png")
     }
     res.send(arquivo);
 }catch(erro){
