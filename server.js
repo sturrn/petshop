@@ -72,7 +72,7 @@ app.post("/api/atendimento", async (req, res) => {
         }
         const [resultado] = await db.execute(
             `INSERT INTO atendimento
-            (tutor, pet, especie, servico, valor,atendimento) VALUES (?,?,?,?,?,?)`, [tutor.trim(), pet.trim(), especie, servico, Number(valor), data]
+            (tutor, pet, especie, servico, valor,data_atendimento) VALUES (?,?,?,?,?,?)`, [tutor.trim(), pet.trim(), especie, servico, Number(valor), data]
         )
         res.status(201).json({ mensagem: "Atendimento salvo!", id: resultado.insertId })
     } catch (erro) {
@@ -177,7 +177,7 @@ app.get("/api/graficos", autenticar, async (req, res) => {
 app.get("/api/pdf", autenticar, async (req, res) => {
     try {
         const [atendimento] = await db.execute(`
-        SELECT tutor, pet, especie, servico FROM atendimento ORDER BY atendimento
+        SELECT tutor, pet, especie, servico FROM atendimento ORDER BY data_atendimento
     `)
        await conectarPython("/pdf", atendimento, res, "pdf")
     } catch (erro) {
